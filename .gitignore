@@ -6,3 +6,12 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 docs
+coverage
+
+# 환경변수 (예: VITE_API_PROXY_TARGET에 실제 EKS/ALB 주소가 들어감)
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
