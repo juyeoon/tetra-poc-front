@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="100%" height="100%">
+  <defs>
+    <!-- 배경 그라데이션 -->
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="50%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+
+    <!-- 배지 그라데이션 -->
+    <linearGradient id="badge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FBBF24" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+
+    <!-- 카드 그라데이션 및 그림자 -->
+    <linearGradient id="card-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.05" />
+    </linearGradient>
+    
+    <filter id="drop-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="15" stdDeviation="15" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+    
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 배경 -->
+  <rect width="1200" height="400" fill="url(#bg-gradient)" rx="16" />
+
+  <!-- 장식용 배경 원형 패턴 -->
+  <circle cx="150" cy="80" r="120" fill="#FFFFFF" fill-opacity="0.05" />
+  <circle cx="1050" cy="320" r="180" fill="#FFFFFF" fill-opacity="0.08" />
+  <circle cx="550" cy="360" r="70" fill="#FFFFFF" fill-opacity="0.03" />
+
+  <!-- 우측 비주얼 그래픽 (쇼핑백 & 카드 오브젝트) -->
+  <g transform="translate(820, 200)" filter="url(#drop-shadow)">
+    <!-- 입체 입자/별 효과 -->
+    <path d="M-220 -80 L-210 -50 L-180 -40 L-210 -30 L-220 0 L-230 -30 L-260 -40 L-230 -50 Z" fill="#FBBF24" filter="url(#glow)"/>
+    <path d="M120 -110 L125 -95 L140 -90 L125 -85 L120 -70 L115 -85 L100 -90 L115 -95 Z" fill="#FFFFFF" opacity="0.8"/>
+    <circle cx="-160" cy="100" r="8" fill="#EC4899" />
+    <circle cx="150" cy="70" r="12" fill="#FBBF24" />
+
+    <!-- 쇼핑백 메인 -->
+    <rect x="-100" y="-80" width="200" height="220" rx="16" fill="#FFFFFF" fill-opacity="0.95" />
+    <!-- 쇼핑백 손잡이 -->
+    <path d="M-40 -80 C-40 -130, 40 -130, 40 -80" fill="none" stroke="#7C3AED" stroke-width="12" stroke-linecap="round" />
+    <!-- 쇼핑백 로고 아이콘 (선물 상자) -->
+    <rect x="-35" y="-10" width="70" height="70" rx="8" fill="#7C3AED" />
+    <path d="M-35 15 L35 15 M0 -10 L0 60" stroke="#FFFFFF" stroke-width="6" />
+    <path d="M-15 -25 C-25 -40, 0 -40, -2 -25 C0 -40, 25 -40, 15 -25 Z" fill="#FBBF24" />
+
+    <!-- 입체 할인 태그 -->
+    <g transform="translate(60, -20) rotate(15)">
+      <rect x="-60" y="-35" width="120" height="70" rx="12" fill="url(#badge-gradient)" />
+      <circle cx="-35" cy="0" r="6" fill="#4F46E5" />
+      <text x="5" y="10" font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-weight="900" font-size="28" fill="#1E1B4B" text-anchor="middle">SALE</text>
+    </g>
+  </g>
+
+  <!-- 좌측 텍스트 콘텐츠 -->
+  <!-- 1. 서브 태그 -->
+  <g transform="translate(90, 85)">
+    <rect x="0" y="0" width="140" height="36" rx="18" fill="#FFFFFF" fill-opacity="0.2" />
+    <text x="70" y="23" font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-weight="700" font-size="15" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">WEEKLY SPECIAL</text>
+  </g>
+
+  <!-- 2. 메인 타이틀 -->
+  <text x="90" y="175" font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-weight="900" font-size="52" fill="#FFFFFF" letter-spacing="-1">
+    시즌 한정 특별 기획전
+  </text>
+
+  <!-- 3. 서브 타이틀 / 할인율 -->
+  <text x="90" y="235" font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-weight="500" font-size="24" fill="#E0E7FF">
+    인기 상품 최대 <tspan font-weight="800" fill="#FBBF24" font-size="32">70% OFF</tspan> 혜택을 놓치지 마세요!
+  </text>
+
+  <!-- 4. CTA 버튼 -->
+  <g transform="translate(90, 275)" filter="url(#drop-shadow)" cursor="pointer">
+    <rect x="0" y="0" width="200" height="56" rx="28" fill="#FFFFFF" />
+    <text x="85" y="34" font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-weight="800" font-size="18" fill="#4F46E5" text-anchor="middle">
+      지금 구매하기
+    </text>
+    <!-- 화살표 아이콘 -->
+    <path d="M145 28 L160 28 M153 21 L160 28 L153 35" stroke="#4F46E5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  </g>
+</svg>

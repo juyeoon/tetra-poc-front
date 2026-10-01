@@ -1,0 +1,161 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+.page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.page-center {
+  text-align: center;
+}
+
+.page-wide {
+  max-width: 880px;
+}
+
+.banner {
+  max-width: 100%;
+  margin-bottom: 24px;
+}
+
+.countdown {
+  font-size: 48px;
+  font-weight: 700;
+  color: #e67e22;
+  margin: 8px 0;
+}
+
+.caption {
+  color: #888;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.primary-button {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: #e67e22;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 16px;
+  border: 3px solid #eee;
+  border-top-color: #e67e22;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.waiting-box {
+  border: 1px dashed #ccc;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.waiting-count {
+  font-size: 32px;
+  font-weight: 700;
+  color: #e67e22;
+}
+
+.issue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.issue-header h1 {
+  margin: 0 0 4px;
+}
+
+.issue-header .caption {
+  margin: 0;
+}
+
+.issue-header-button {
+  width: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.coupon-list {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.coupon-item {
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+
+.coupon-name {
+  font-weight: 600;
+}
+
+.coupon-description {
+  color: #888;
+  font-size: 14px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  padding: 32px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+}
+
+.modal-message {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.modal-submessage {
+  color: #888;
+  font-size: 14px;
+}
