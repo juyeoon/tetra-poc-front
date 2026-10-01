@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getQueueCursor } from '../api'
 import { config } from '../config'
 
@@ -11,10 +11,17 @@ export function computeDelay(gap: number): number {
   return 1000
 }
 
+// 서로 다른 CloudFront 엣지 캐시를 번갈아 받으면 커서가 뒤로 갈 수 있다. 지금까지 받은 커서의
+// 최댓값만 쓰고, 작은 값이 오면 무시한다. (폴링 스펙 §4, 추가지침 01 §3)
+export function mergeCursor(prevMax: number | null, received: number): number {
+  if (prevMax === null) return received
+  return Math.max(prevMax, received)
+}
+
 export type QueuePollingState = {
   cursor: number | null
   gap: number | null
-  // 연속 실패 상한을 넘어 포기한 상태. (CLAUDE.md §6, 에러 UI는 TODO(미정))
+  // 연속 실패 상한을 넘어 포기한 상태. (CLAUDE.md §6, 에러 UI는 QueueTicket.tsx에서 확정)
   failed: boolean
 }
 
@@ -23,12 +30,14 @@ export function useQueuePolling(eventId: number, myTicketNumber: number | null |
   const [cursor, setCursor] = useState<number | null>(null)
   const [gap, setGap] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
+  const maxCursorRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (myTicketNumber === null || myTicketNumber === undefined) {
       return
     }
     const ticket = myTicketNumber
+    maxCursorRef.current = null
 
     let cancelled = false
     let failureCount = 0
@@ -39,8 +48,10 @@ export function useQueuePolling(eventId: number, myTicketNumber: number | null |
         const res = await getQueueCursor(eventId)
         if (cancelled) return
         failureCount = 0
-        setCursor(res.cursor)
-        const currentGap = ticket - res.cursor
+        const merged = mergeCursor(maxCursorRef.current, res.cursor)
+        maxCursorRef.current = merged
+        setCursor(merged)
+        const currentGap = ticket - merged
         setGap(currentGap)
         if (currentGap > 0) {
           timeoutId = setTimeout(poll, computeDelay(currentGap))

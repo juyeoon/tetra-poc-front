@@ -29,11 +29,14 @@ export default function QueueTicket() {
     }
   }, [gap, navigate])
 
-  // TODO(미정): 폴링 연속 실패 시 에러 UI는 화면설계서에 없다. 최소 문구만 둔다.
+  // 폴링 연속 실패 시 에러 UI: 화면설계서에 없어 최소 문구 + 새로고침 버튼으로 확정했다.
   if (failed) {
     return (
       <div className="page page-center">
-        <p>잠시 문제가 발생했습니다. 잠시 후 새로고침해 주세요.</p>
+        <p>잠시 문제가 발생했습니다. 새로고침 후 다시 시도해 주세요.</p>
+        <button className="primary-button" onClick={() => window.location.reload()}>
+          새로고침
+        </button>
       </div>
     )
   }
