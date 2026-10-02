@@ -16,6 +16,7 @@ const MESSAGES: Record<string, string> = {
   EVENT_NOT_FOUND: '존재하지 않는 이벤트입니다.',
   NOT_FOUND: '존재하지 않는 이벤트입니다.',
   EVENT_NOT_STARTED: '아직 시작되지 않은 이벤트입니다.',
+  EVENT_ENDED: '종료된 이벤트입니다.',
   TICKET_REQUIRED: '대기 번호표가 필요합니다. 처음 화면에서 다시 입장해 주세요.',
   ALREADY_CLAIMED: '이미 참여한 이벤트입니다.',
 }

@@ -28,7 +28,9 @@ function getStartsInSeconds(): number {
   return Number.isFinite(n) ? n : 15
 }
 
-// TODO(미정): returnUrl이 빈 문자열일 때의 동작은 CLAUDE.md §4/§10에 정의되어 있다(모달만 닫음).
+// returnUrl이 빈 문자열일 때의 동작은 CLAUDE.md §4에 정의되어 있다(모달 안에 안내 문구).
+// TODO(미정): 백엔드가 GET /api/issuance/events/{eventId}/info를 구현하면 getEventInfo를 실제 호출로 바꾸고
+// 이 더미는 걷어낸다(CLAUDE.md §5). 응답에는 endAt도 있다.
 // DB 시드 값은 빈 문자열이라 기본값도 빈 문자열로 둔다. 04→모달→복귀 흐름 전체를 눈으로 확인하려면
 // 개발 중 `?returnUrl=<url>` 쿼리로 값을 채워 테스트한다.
 function getReturnUrl(): string {

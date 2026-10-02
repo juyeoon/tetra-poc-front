@@ -9,6 +9,12 @@ describe('getErrorNotice', () => {
     expect(n.canReload).toBe(false)
   })
 
+  it('EVENT_ENDED는 종료 문구이고 새로고침 버튼이 없다', () => {
+    const n = getErrorNotice(new ApiError('x', 'EVENT_ENDED', 409))
+    expect(n.message).toBe('종료된 이벤트입니다.')
+    expect(n.canReload).toBe(false)
+  })
+
   it('ALREADY_CLAIMED 문구는 성공을 암시하지 않는다', () => {
     const n = getErrorNotice(new ApiError('x', 'ALREADY_CLAIMED', 409))
     expect(n.message).not.toContain('발급되었')
