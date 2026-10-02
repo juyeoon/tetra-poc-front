@@ -3,6 +3,7 @@
 import { now } from '../lib/serverTime'
 import { buildDummyEventInfo, type EventInfo } from '../mocks/event'
 import { parseCursorResponse } from './parseCursorResponse'
+import { ApiError, unwrapApiEnvelope } from './unwrapApiEnvelope'
 
 export type { EventInfo }
 
@@ -23,21 +24,47 @@ export async function getEventInfo(eventId: number): Promise<EventInfo> {
 // 같은 호스트의 상대 경로만 쓴다. 절대 URL/호스트 하드코딩 금지. (CLAUDE.md §5 2단계 규칙)
 // 세션은 서버가 내려주는 HttpOnly 쿠키이므로 JS는 세션 id를 읽지도, 헤더에 싣지도 않는다. same-origin이면
 // 브라우저가 쿠키를 자동으로 보내지만 명시적으로 밝혀 둔다. user_id도 절대 요청 본문에 넣지 않는다(서버가 세션에서 꺼냄).
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// fetch는 HTTP 오류(res.ok가 false)에서 예외를 던지지 않으므로 직접 확인해 실패로 처리한다. (CLAUDE.md §5)
+// 5개 API 모두 { success, data } / { success:false, error:{code,message} } 봉투다. 에러 응답(4xx/5xx)도
+// 본문이 봉투이므로 읽어서 error.code를 ApiError에 싣는다. 본문을 읽을 수 없으면 상태 코드만 싣는다.
+async function readEnvelope(res: Response, label: string): Promise<unknown> {
+  let body: unknown
+  try {
+    body = await res.json()
+  } catch {
+    throw new ApiError(`요청 실패: ${label} -> ${res.status}`, null, res.status)
+  }
+  if (!res.ok) {
+    try {
+      unwrapApiEnvelope(body, res.status)
+    } catch (e) {
+      if (e instanceof ApiError && e.code !== null) throw e
+    }
+    throw new ApiError(`요청 실패: ${label} -> ${res.status}`, null, res.status)
+  }
+  return unwrapApiEnvelope(body, res.status)
+}
+
+async function request(path: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(path, {
     credentials: 'same-origin',
     ...init,
   })
-  // fetch는 HTTP 오류(res.ok가 false)에서 예외를 던지지 않으므로 직접 확인해 실패로 처리한다. (CLAUDE.md §5)
-  if (!res.ok) {
-    throw new Error(`요청 실패: ${init?.method ?? 'GET'} ${path} -> ${res.status}`)
-  }
-  return (await res.json()) as T
+  return readEnvelope(res, `${init?.method ?? 'GET'} ${path}`)
 }
 
-// 응답 모양은 미정이며 임시로 { ticket: number }로 받는다 (CLAUDE.md §5). 에러 코드도 미정(§10).
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+// 번호표 응답 data는 { ticketNumber: number }. 화면 코드가 쓰는 { ticket }으로 옮겨 담는다.
+// TODO(미정): 화면 코드의 이름을 ticketNumber로 맞출지
 export async function requestTicket(eventId: number): Promise<{ ticket: number }> {
-  return request(`/api/issuance/events/${eventId}/ticket`, { method: 'POST' })
+  const data = await request(`/api/issuance/events/${eventId}/ticket`, { method: 'POST' })
+  if (!isRecord(data) || typeof data.ticketNumber !== 'number' || !Number.isFinite(data.ticketNumber)) {
+    throw new ApiError('번호표 응답 형식 오류')
+  }
+  return { ticket: data.ticketNumber }
 }
 
 // --- 커서 테스트용 목(mock) 모드 (추가지침 01 §4) ---
@@ -93,28 +120,37 @@ function buildMockCursorBody(): unknown {
 
 // 서빙 커서. CloudFront 엣지에서 캐시되므로(추가지침 01) 캐시 무효화 쿼리, fetch의 cache 옵션,
 // 커스텀 헤더, credentials 옵션 변경을 하지 않는다 — 같은 호스트 상대 경로에 대한 기본 fetch 그대로 둔다.
-// 쿠키는 브라우저 기본 동작으로 함께 나가지만 이 경로에서는 CloudFront가 origin에 전달하지 않는다.
-// res.ok만으로는 CloudFront 설정 오류(index.html이 200으로 돌아오는 경우)를 못 걸러서
-// parseCursorResponse로 본문 모양까지 검증한다. 올바른 { cursor: number }가 아니면 전부 reject한다.
+// 이 경로는 인증이 없다(2026-10-01 확인, CDN 캐시 대상이라 세션 쿠키도 필요 없음).
+// 4xx/5xx는 실제 상태 코드로 오므로(index.html로 안 바뀜) res.ok로 실패를 판단한다.
+// 응답은 { success, data: { cursor } } 공통 봉투 형식이라(2026-10-01 변경) unwrapApiEnvelope로
+// data를 꺼낸 뒤, parseCursorResponse로 그 안의 { cursor: number } 모양까지 검증한다.
 export async function getQueueCursor(eventId: number): Promise<{ cursor: number }> {
   if (isCursorMockActive()) {
     return parseCursorResponse(buildMockCursorBody())
   }
 
   const res = await fetch(`/api/issuance/events/${eventId}/queue/cursor`)
-  if (!res.ok) {
-    throw new Error(`요청 실패: GET queue/cursor -> ${res.status}`)
-  }
-  const body: unknown = await res.json()
-  return parseCursorResponse(body)
+  return parseCursorResponse(await readEnvelope(res, 'GET queue/cursor'))
 }
 
-// 응답 모양은 미정이며 임시로 이 필드 구성으로 받는다. description이 실제 응답에 포함되는지도 미정(§10).
+// 쿠폰 목록 응답 data는 { coupons: [...] }. 배열을 꺼내 돌려준다.
+// TODO(미정): coupons 각 항목의 필드(couponId, name, description, remaining)와 description 포함 여부 확인
 export async function getCoupons(eventId: number): Promise<Coupon[]> {
-  return request(`/api/issuance/events/${eventId}/coupons`)
+  const data = await request(`/api/issuance/events/${eventId}/coupons`)
+  if (!isRecord(data) || !Array.isArray(data.coupons)) {
+    throw new ApiError('쿠폰 목록 응답 형식 오류')
+  }
+  return data.coupons as Coupon[]
 }
 
-// 응답 모양은 미정이며 임시로 { result }로 받는다 (CLAUDE.md §5). 서버 측 재검증 로직은 별도 담당.
+// claim 응답 data는 { result: 'SUCCESS' | 'SOLD_OUT', coupons: [...] }. 품절 값은 서버가 SOLD_OUT으로 준다.
+// 화면 코드는 DB issuance_history.result 값인 FAILED_SOLDOUT을 쓰므로 여기서 옮겨 담는다.
+// 응답의 coupons는 쓰지 않는다. 서버 측 재검증 로직은 별도 담당.
+// TODO(미정): 화면 코드의 값 이름을 SOLD_OUT으로 맞출지, 응답 coupons(잔여 매수 갱신)를 쓸지
 export async function claimCoupons(eventId: number): Promise<{ result: ClaimResult }> {
-  return request(`/api/issuance/events/${eventId}/coupons/claim`, { method: 'POST' })
+  const data = await request(`/api/issuance/events/${eventId}/coupons/claim`, { method: 'POST' })
+  if (!isRecord(data)) throw new ApiError('쿠폰 발급 응답 형식 오류')
+  if (data.result === 'SUCCESS') return { result: 'SUCCESS' }
+  if (data.result === 'SOLD_OUT') return { result: 'FAILED_SOLDOUT' }
+  throw new ApiError('쿠폰 발급 응답 형식 오류')
 }

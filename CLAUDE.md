@@ -88,14 +88,16 @@ API 호출은 전부 `src/api/index.ts` 한 곳에 둔다. **화면 코드에서
 | 용도 | 메서드와 경로 | 프런트가 호출하는가 | 스키마 |
 | --- | --- | --- | --- |
 | 세션 발급 | `GET /api/issuance/session` | **아니오.** 테넌트 서버의 302가 브라우저를 이 주소로 보내고, 서버가 세션 쿠키를 담은 302로 02(`/`)에 돌려보낸다 | 해당 없음 |
-| 번호표 발급 | `POST /api/issuance/events/{eventId}/ticket` | 예. 03이 열릴 때 한 번 | 응답 미정 (임시: `{ ticket: number }`) |
-| 서빙 커서 | `GET /api/issuance/events/{eventId}/queue/cursor` | 예. 03의 폴링 | 응답 `{ "cursor": number }` (폴링 스펙에 확정) |
-| 쿠폰 목록 | `GET /api/issuance/events/{eventId}/coupons` | 예. 04가 열릴 때 | 응답 미정 (임시: 쿠폰 id, 이름, 설명, 잔여 매수) |
-| 쿠폰 발급 | `POST /api/issuance/events/{eventId}/coupons/claim` | 예. 04의 버튼 | 응답 미정 (임시: `{ result: 'SUCCESS' \| 'FAILED_SOLDOUT' }`, DB의 `issuance_history.result` 값에 맞춤) |
+| 번호표 발급 | `POST /api/issuance/events/{eventId}/ticket` | 예. 03이 열릴 때 한 번 | `data`: `{ ticketNumber: number }` (확정) |
+| 서빙 커서 | `GET /api/issuance/events/{eventId}/queue/cursor` | 예. 03의 폴링 | `data`: `{ cursor: number }` (확정) |
+| 쿠폰 목록 | `GET /api/issuance/events/{eventId}/coupons` | 예. 04가 열릴 때 | `data`: `{ coupons: [...] }` (확정. 항목의 필드 구성은 임시: 쿠폰 id, 이름, 설명, 잔여 매수) |
+| 쿠폰 발급 | `POST /api/issuance/events/{eventId}/coupons/claim` | 예. 04의 버튼 | `data`: `{ result: 'SUCCESS' \| 'SOLD_OUT', coupons: [...] }` (확정) |
+
+**응답 봉투(확정, 5개 API 공통)**: 성공은 `{ success: true, data: {...} }`, 에러는 `{ success: false, error: { code, message } }`이고 HTTP 상태 코드는 4xx/5xx다. 봉투가 아닌 응답은 비정상(설정 오류 등)이므로 통과시키지 않고 예외로 처리한다. 에러 처리는 `error.code`를 쓴다(예: `SESSION_NOT_FOUND`, `EVENT_NOT_STARTED`, `ALREADY_CLAIMED`, `TICKET_REQUIRED`). 코드별 화면 동작은 미정이다(§10).
 
 이벤트 정보(이벤트명, 시작 시각, 배너, 복귀 주소)는 **API가 없다.** PoC에서는 더미다.
 
-아래 시그니처에서 `getQueueCursor`의 응답만 확정이고, 나머지 반환 타입은 **임시이며 계약이 확정되기 전**이다. 확정된 것으로 취급하지 마라.
+아래 시그니처는 **화면 코드가 보는 모양**이다. API 응답과 다른 곳은 `src/api/`가 옮겨 담는다: `ticketNumber`→`ticket`, `data.coupons`→배열, `SOLD_OUT`→`FAILED_SOLDOUT`(DB `issuance_history.result` 값). 화면 쪽 이름을 응답에 맞출지는 미정이다.
 
 ```ts
 getEventInfo(eventId: number): Promise<EventInfo>        // 더미 전용, 실제 API 없음
@@ -194,7 +196,7 @@ type EventInfo = {
 
 ## 10. 아직 정해지지 않은 것 (구현하지 말고 TODO로만)
 
-- 번호표 발급, 쿠폰 목록, 쿠폰 발급의 요청과 응답 모양, 에러 코드 (서빙 커서 응답만 확정)
+- 에러 코드별 화면 동작(`error.code`: `SESSION_NOT_FOUND`, `EVENT_NOT_STARTED`, `ALREADY_CLAIMED`, `TICKET_REQUIRED` 등), 쿠폰 발급 응답의 `coupons` 사용 여부 (응답 봉투와 4개 API의 `data` 모양은 확정)
 - 쿠폰 목록의 잔여 매수를 어떤 형태로 보여 줄지 (설계서 확인 필요), 목록 응답에 설명(`description`)이 들어오는지 (정의서는 이름과 잔여 매수만 적었고, DB의 description은 화면 노출 문구)
 - `returnUrl`과 배너 주소가 비어 있을 때의 화면 동작 (지금은 배너를 그리지 않고, 확인 버튼은 모달만 닫음)
 - 폴링 실패 시 재시도 정책의 확정 (고정 간격인지 지수 백오프와 지터인지), 에러 화면
