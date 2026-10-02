@@ -73,11 +73,11 @@ npm run build    # dist/ 정적 파일 생성
 
 ### 04 쿠폰 발급 (`/issue`)
 
-- 열릴 때 `getCoupons(eventId)`로 쿠폰 목록(이름, 설명, 잔여 매수)을 받아 보여 주고 "쿠폰 받기 (전체 발급)" 버튼을 둔다.
+- 열릴 때 `getCoupons(eventId)`로 쿠폰 목록을 받아 이름과 설명을 보여 주고(**잔여 매수는 화면에 보여 주지 않는다**, 확정. 응답의 `remaining`은 타입에 두지 않는다) "쿠폰 받기 (전체 발급)" 버튼을 둔다.
 - 버튼을 누르면 `claimCoupons(eventId)`를 호출한다. 결과에 따라 모달을 연다.
   - 성공(05): "쿠폰이 발급되었습니다"
   - 품절(06): "쿠폰이 모두 소진되었습니다" / "아쉽지만 준비된 수량이 모두 발급되었어요. 다음 이벤트에서 다시 만나요."
-- 모달의 "확인"을 누르면 이벤트 정보의 `returnUrl`(테넌트 페이지)로 이동한다. `returnUrl`이 빈 문자열이면 이동하지 않고 모달만 닫는다(`TODO(미정)`).
+- 모달의 "확인"을 누르면 이벤트 정보의 `returnUrl`(테넌트 페이지)로 이동한다. `returnUrl`이 빈 문자열이면 이동하지 않고 모달 안에 "이동할 페이지 주소를 찾을 수 없습니다."를 보여 준다(확정, 모달은 닫지 않는다).
 
 ## 5. API
 
@@ -90,10 +90,30 @@ API 호출은 전부 `src/api/index.ts` 한 곳에 둔다. **화면 코드에서
 | 세션 발급 | `GET /api/issuance/session` | **아니오.** 테넌트 서버의 302가 브라우저를 이 주소로 보내고, 서버가 세션 쿠키를 담은 302로 02(`/`)에 돌려보낸다 | 해당 없음 |
 | 번호표 발급 | `POST /api/issuance/events/{eventId}/ticket` | 예. 03이 열릴 때 한 번 | `data`: `{ ticketNumber: number }` (확정) |
 | 서빙 커서 | `GET /api/issuance/events/{eventId}/queue/cursor` | 예. 03의 폴링 | `data`: `{ cursor: number }` (확정) |
-| 쿠폰 목록 | `GET /api/issuance/events/{eventId}/coupons` | 예. 04가 열릴 때 | `data`: `{ coupons: [...] }` (확정. 항목의 필드 구성은 임시: 쿠폰 id, 이름, 설명, 잔여 매수) |
+| 쿠폰 목록 | `GET /api/issuance/events/{eventId}/coupons` | 예. 04가 열릴 때 | `data`: `{ coupons: [...] }` (확정. 항목: `couponId`, `name`, `description`, `remaining`. `remaining`(Redis 실시간 재고)은 화면에 보여 주지 않으므로 쓰지 않는다) |
 | 쿠폰 발급 | `POST /api/issuance/events/{eventId}/coupons/claim` | 예. 04의 버튼 | `data`: `{ result: 'SUCCESS' \| 'SOLD_OUT', coupons: [...] }` (확정) |
 
-**응답 봉투(확정, 5개 API 공통)**: 성공은 `{ success: true, data: {...} }`, 에러는 `{ success: false, error: { code, message } }`이고 HTTP 상태 코드는 4xx/5xx다. 봉투가 아닌 응답은 비정상(설정 오류 등)이므로 통과시키지 않고 예외로 처리한다. 에러 처리는 `error.code`를 쓴다(예: `SESSION_NOT_FOUND`, `EVENT_NOT_STARTED`, `ALREADY_CLAIMED`, `TICKET_REQUIRED`). 코드별 화면 동작은 미정이다(§10).
+**응답 봉투(확정, 5개 API 공통)**: 성공은 `{ success: true, data: {...} }`, 에러는 `{ success: false, error: { code, message } }`이고 HTTP 상태 코드는 4xx/5xx다(에러 응답에는 `Cache-Control: no-store`). 봉투가 아닌 응답은 비정상(설정 오류 등)이므로 통과시키지 않고 예외로 처리한다. **예외**: 429, 502, 503, 504는 백엔드가 아니라 CloudFront나 ALB가 만든 응답이라 봉투가 아니다. 본문을 믿지 말고 상태 코드로만 판단한다. 에러 처리는 `error.code`를 쓴다.
+
+| HTTP | code | 언제 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | 경로 값 형식 오류 |
+| 401 | `SESSION_NOT_FOUND` | 세션 쿠키 없음, 세션 만료 |
+| 403 | `SESSION_EVENT_MISMATCH` | 다른 이벤트의 세션으로 접근 |
+| 404 | `EVENT_NOT_FOUND`, `NOT_FOUND` | 없는 이벤트, 없는 경로 |
+| 405 | `METHOD_NOT_ALLOWED` | 허용하지 않는 메서드 |
+| 409 | `EVENT_NOT_STARTED` | 이벤트 시작 전 번호표 요청 |
+| 409 | `TICKET_REQUIRED` | 번호표 없이 claim |
+| 409 | `ALREADY_CLAIMED` | 이 사용자가 이 이벤트에서 이미 claim 처리됨(이전 결과가 성공이든 품절이든 같은 코드, 세션이 아니라 사용자 기준). 성공처럼 보여 주면 안 된다 |
+| 500 | `INTERNAL_ERROR` | 서버 내부 오류 |
+
+번호표는 401, 403, 404, 409(`EVENT_NOT_STARTED`)가, 커서는 404, 400, 500만(인증 없음), 쿠폰 목록은 401, 403이, claim은 401, 403, 409(`TICKET_REQUIRED`, `ALREADY_CLAIMED`)가 온다. 세션이 필요한 API는 세션 확인을 먼저 하므로 세션 없이 잘못된 메서드로 부르면 405가 아니라 401이다. 품절(`SOLD_OUT`)은 에러가 아니라 200이다. 이벤트 종료는 아직 처리하지 않는다(코드 미정).
+
+**재시도 기준(백엔드 확인)**: 4xx는 재시도하지 않는다. 5xx, 네트워크 오류, 인프라의 429/502/503/504만 재시도한다(`src/api/isRetryableError.ts`).
+
+**세션**: 만든 시점부터 2시간 고정이고 대기와 폴링 중에도 늘어나지 않는다. 커서 API는 인증이 없어서 세션이 만료돼도 폴링은 정상이고, 다음 쿠폰 목록이나 claim에서 401 `SESSION_NOT_FOUND`로 드러난다.
+
+**서버 시각**: 서버 시각 API는 없다. 모든 응답의 `Date` 헤더(초 단위, GMT)를 JS에서 읽을 수 있고, 캐시된 응답(커서)은 `Age` 헤더를 더해 보정한다. 이벤트 시작 시각을 어디서 받을지가 미정이라 아직 쓰지 않는다(§10).
 
 이벤트 정보(이벤트명, 시작 시각, 배너, 복귀 주소)는 **API가 없다.** PoC에서는 더미다.
 
@@ -103,7 +123,7 @@ API 호출은 전부 `src/api/index.ts` 한 곳에 둔다. **화면 코드에서
 getEventInfo(eventId: number): Promise<EventInfo>        // 더미 전용, 실제 API 없음
 requestTicket(eventId: number): Promise<{ ticket: number }>   // 호출할 때마다 새 번호
 getQueueCursor(eventId: number): Promise<{ cursor: number }>
-getCoupons(eventId: number): Promise<{ couponId: number; name: string; description: string; remaining: number }[]>
+getCoupons(eventId: number): Promise<{ couponId: number; name: string; description: string }[]>
 claimCoupons(eventId: number): Promise<{ result: 'SUCCESS' | 'FAILED_SOLDOUT' }>
 ```
 
@@ -111,7 +131,7 @@ claimCoupons(eventId: number): Promise<{ result: 'SUCCESS' | 'FAILED_SOLDOUT' }>
 
 - `requestTicket`은 호출할 때마다 번호를 돌려준다. 기본은 120부터 커지는 값이고, 개발 중 `?ticket=<n>`으로 시작 값을 바꿀 수 있다.
 - `getQueueCursor`는 03이 열린 뒤 경과 시간에 비례해 올라간다. 기본은 초당 20이고, `?cursorPerSec=<n>`으로 바꿀 수 있다. 둘을 조절해 gap 구간별 폴링 간격을 확인한다.
-- `getCoupons`는 DB 시드와 맞춰 10개를 돌려준다. 이름은 `PoC 쿠폰 1`~`PoC 쿠폰 10`, 설명은 `PoC 쿠폰입니다.`, 잔여는 모두 10이다(DB의 `stock_count`). 이벤트당 쿠폰은 최대 10종이다.
+- `getCoupons`는 DB 시드와 맞춰 10개를 돌려준다. 이름은 `PoC 쿠폰 1`~`PoC 쿠폰 10`, 설명은 `PoC 쿠폰입니다.`다. 이벤트당 쿠폰은 최대 10종이다.
 - `claimCoupons`는 기본 `SUCCESS`이고 `?result=soldout`으로 `FAILED_SOLDOUT`을 돌려주게 바꿀 수 있다.
 
 2단계에서 실제 호출을 넣을 때 지킬 규칙(1단계에서는 구현하지 않는다):
@@ -150,7 +170,7 @@ claimCoupons(eventId: number): Promise<{ result: 'SUCCESS' | 'FAILED_SOLDOUT' }>
 
 **실패 처리**
 
-- 요청이 실패하거나(`res.ok`가 false 포함) 예외가 나면 즉시 포기하지 않고 재시도한다. 스펙의 예시는 2초 후 재시도이며, 이 값은 설정 파일에 임시 상수로 둔다.
+- 요청이 실패하거나(`res.ok`가 false 포함) 예외가 나면 즉시 포기하지 않고 재시도한다. 스펙의 예시는 2초 후 재시도이며, 이 값은 설정 파일에 임시 상수로 둔다. 단 **4xx는 재시도하지 않고 바로 에러 UI**를 보여 준다(§5, 백엔드 확인). 예를 들어 404 `EVENT_NOT_FOUND`는 다시 보내도 같다.
 - 연속 실패 횟수에 상한을 둔다. 스펙의 예시는 5회이고, 넘으면 에러 UI를 보여 준다. 에러 UI는 설계서에 없으므로 최소한의 문구만 두고 TODO(미정)로 남긴다.
 - 지수 백오프와 지터를 쓸지는 팀 확인이 필요하다(스펙은 고정 간격). 지금은 스펙대로 구현하고 TODO(미정)로 남긴다.
 - 탭이 백그라운드로 가면 브라우저가 타이머를 늦출 수 있다. 탭이 다시 보일 때 즉시 한 번 호출하는 처리는 스펙에 없으므로 구현하지 말고 TODO(미정)로만 남긴다.
@@ -174,7 +194,7 @@ type EventInfo = {
 
 - **시간대**: DB의 `start_at`은 KST로 저장되고 시간대 정보가 없다. 프런트는 이 값을 항상 **KST(+09:00)로 해석**한다. 브라우저의 로컬 시간대로 파싱하지 않는다. 더미 값도 `+09:00`이 붙은 ISO 문자열로 둔다.
 - DB 시드의 `start_at`(2026-09-29 10:00 KST)은 이미 지난 값이라 더미에 쓰지 않는다. `startAt`은 기본적으로 실행 시점의 15초 뒤(`+09:00` 표기)로 계산하고, `?startsIn=<초>`로 바꿀 수 있게 한다.
-- 이벤트 id는 `src/lib/eventId.ts`에서 얻는다. 호스트는 `{event id}.{tenant id}.루트도메인`이고 DB의 `event.subdomain`에는 `{event id}.{tenant id}`가 들어간다. 그래서 `location.hostname`의 **첫 라벨이 event id**다. 우선순위는 (1) `?event=<id>` 쿼리(로컬과 PoC 개발용), (2) 호스트의 첫 라벨이 숫자면 그 값, (3) 설정의 기본값 1(DB 시드의 event_id, `// 임시`)이다. DB 시드는 subdomain이 NULL이라 로컬에서는 (1)이나 (3)을 쓴다. 호스트에서 id를 꺼내는 부분은 순수 함수로 분리해 단위 테스트가 가능하게 한다.
+- 이벤트 id는 `src/lib/eventId.ts`에서 얻는다. 호스트의 첫 라벨은 해시값이라 event id로 쓰지 않는다(백엔드 확인). 세션 발급이 끝나면 서버가 `/?event=<id>`로 보내므로, 숫자 event id는 **`?event=<id>` 쿼리로만** 전달된다. 우선순위는 (1) `?event=<id>` 쿼리, (2) 설정의 기본값 1(DB 시드의 event_id, `// 임시`)이다. 화면을 이동할 때 쿼리를 그대로 넘겨야 id가 유지된다.
 - 배너는 `public/`의 더미 이미지를 쓴다. 실제 DB 값은 빈 문자열일 수 있으므로 화면은 `bannerUrl`이 비어 있어도 깨지지 않아야 한다.
 
 ## 8. 지켜야 할 제약
@@ -185,7 +205,7 @@ type EventInfo = {
 - 서버 런타임이 필요한 기능을 쓰지 않는다.
 - 랜덤 값(지터)과 현재 시각은 각각 한 곳(지터 사용처, `serverTime.ts`)에서만 만든다.
 - 일시는 KST(+09:00)로 해석하고 브라우저의 로컬 시간대에 의존하지 않는다.
-- 화면 문구는 화면설계서를 따른다. 설계서에 없는 안내 문구(예: "새로고침하면 순번이 초기화됩니다")는 넣지 말고 TODO로 남긴다.
+- 화면 문구는 화면설계서를 따른다. 설계서에 없는 안내 문구(예: "새로고침하면 순번이 초기화됩니다")는 넣지 말고 TODO로 남긴다. 예외로 에러 화면의 `error.code`별 문구는 팀이 정했고 `src/lib/errorNotice.ts`에 둔다.
 
 ## 9. 배포 조건 (CloudFront 검증을 위해)
 
@@ -196,9 +216,11 @@ type EventInfo = {
 
 ## 10. 아직 정해지지 않은 것 (구현하지 말고 TODO로만)
 
-- 에러 코드별 화면 동작(`error.code`: `SESSION_NOT_FOUND`, `EVENT_NOT_STARTED`, `ALREADY_CLAIMED`, `TICKET_REQUIRED` 등), 쿠폰 발급 응답의 `coupons` 사용 여부 (응답 봉투와 4개 API의 `data` 모양은 확정)
-- 쿠폰 목록의 잔여 매수를 어떤 형태로 보여 줄지 (설계서 확인 필요), 목록 응답에 설명(`description`)이 들어오는지 (정의서는 이름과 잔여 매수만 적었고, DB의 description은 화면 노출 문구)
-- `returnUrl`과 배너 주소가 비어 있을 때의 화면 동작 (지금은 배너를 그리지 않고, 확인 버튼은 모달만 닫음)
+- 에러 화면의 디자인(문구는 `src/lib/errorNotice.ts`에서 `error.code`별로 정했고 임시다). 이벤트 종료 코드가 생기면 문구를 추가한다
+- 이벤트 종료 시 응답(백엔드가 아직 처리하지 않음), 쿠폰 발급 응답의 `coupons` 사용 여부(백엔드: 쓰지 않아도 됨)
+- 서버 시각 보정(`Date`/`Age` 헤더 사용 여부)과 이벤트 시작 시각을 어디서 받을지(지금은 더미)
+- 폴링 재시도 간격을 늘리는 방식(백엔드 권장)
+- `returnUrl`과 배너 주소가 어디서 오는지(지금은 더미). 비어 있을 때의 동작은 확정(배너는 그리지 않고, `returnUrl`이 비면 모달에 안내 문구)
 - 폴링 실패 시 재시도 정책의 확정 (고정 간격인지 지수 백오프와 지터인지), 에러 화면
 - 카운트다운의 서버 시각 보정 방식
 - 에러와 예외 화면 (시작 전 접근, 세션 없음·만료, 요청 제한, 네트워크 오류, 이벤트 종료)

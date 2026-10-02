@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getQueueCursor } from '../api'
+import { isRetryableError } from '../api/isRetryableError'
 import { config } from '../config'
 
 // 경계값은 폴링 스펙(docs/api/폴링 클라이언트 구현 스펙.md)의 예시 코드와 동일하게 '초과(>)' 기준으로 구현한다.
@@ -23,6 +24,8 @@ export type QueuePollingState = {
   gap: number | null
   // 연속 실패 상한을 넘어 포기한 상태. (CLAUDE.md §6, 에러 UI는 QueueTicket.tsx에서 확정)
   failed: boolean
+  // 포기한 원인. error.code별 안내 문구를 고르는 데 쓴다.
+  error: unknown
 }
 
 // myTicketNumber가 확정된 뒤에만 폴링을 시작한다. null/undefined인 동안은 아무 것도 하지 않는다.
@@ -30,6 +33,7 @@ export function useQueuePolling(eventId: number, myTicketNumber: number | null |
   const [cursor, setCursor] = useState<number | null>(null)
   const [gap, setGap] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
+  const [error, setError] = useState<unknown>(null)
   const maxCursorRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -56,10 +60,12 @@ export function useQueuePolling(eventId: number, myTicketNumber: number | null |
         if (currentGap > 0) {
           timeoutId = setTimeout(poll, computeDelay(currentGap))
         }
-      } catch {
+      } catch (e) {
         if (cancelled) return
         failureCount += 1
-        if (failureCount >= config.pollingMaxFailures) {
+        // 4xx는 재시도해도 결과가 같으므로 바로 포기한다. (백엔드 확인, CLAUDE.md §6)
+        if (!isRetryableError(e) || failureCount >= config.pollingMaxFailures) {
+          setError(e)
           setFailed(true)
           return
         }
@@ -75,5 +81,5 @@ export function useQueuePolling(eventId: number, myTicketNumber: number | null |
     }
   }, [eventId, myTicketNumber])
 
-  return { cursor, gap, failed }
+  return { cursor, gap, failed, error }
 }

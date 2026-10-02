@@ -10,7 +10,7 @@ export const config = {
   // 임시: 미정
   pollingMaxFailures: 5,
 
-  // event id를 쿼리/호스트에서 얻지 못할 때 쓰는 기본값 (DB 시드의 event_id).
+  // event id를 ?event= 쿼리에서 얻지 못할 때 쓰는 기본값 (DB 시드의 event_id).
   // 임시
   defaultEventId: 1,
 };

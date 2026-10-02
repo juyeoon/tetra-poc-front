@@ -11,7 +11,6 @@ export type Coupon = {
   couponId: number
   name: string
   description: string
-  remaining: number
 }
 
 export type ClaimResult = 'SUCCESS' | 'FAILED_SOLDOUT'
@@ -134,7 +133,7 @@ export async function getQueueCursor(eventId: number): Promise<{ cursor: number 
 }
 
 // 쿠폰 목록 응답 data는 { coupons: [...] }. 배열을 꺼내 돌려준다.
-// TODO(미정): coupons 각 항목의 필드(couponId, name, description, remaining)와 description 포함 여부 확인
+// 응답 항목에는 remaining(Redis 실시간 재고)도 오지만 화면에 보여 주지 않기로 확정해서 타입에 두지 않는다.
 export async function getCoupons(eventId: number): Promise<Coupon[]> {
   const data = await request(`/api/issuance/events/${eventId}/coupons`)
   if (!isRecord(data) || !Array.isArray(data.coupons)) {
@@ -146,7 +145,7 @@ export async function getCoupons(eventId: number): Promise<Coupon[]> {
 // claim 응답 data는 { result: 'SUCCESS' | 'SOLD_OUT', coupons: [...] }. 품절 값은 서버가 SOLD_OUT으로 준다.
 // 화면 코드는 DB issuance_history.result 값인 FAILED_SOLDOUT을 쓰므로 여기서 옮겨 담는다.
 // 응답의 coupons는 쓰지 않는다. 서버 측 재검증 로직은 별도 담당.
-// TODO(미정): 화면 코드의 값 이름을 SOLD_OUT으로 맞출지, 응답 coupons(잔여 매수 갱신)를 쓸지
+// TODO(미정): 화면 코드의 값 이름을 SOLD_OUT으로 맞출지
 export async function claimCoupons(eventId: number): Promise<{ result: ClaimResult }> {
   const data = await request(`/api/issuance/events/${eventId}/coupons/claim`, { method: 'POST' })
   if (!isRecord(data)) throw new ApiError('쿠폰 발급 응답 형식 오류')

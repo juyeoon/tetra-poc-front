@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { claimCoupons, getCoupons, getEventInfo, type ClaimResult, type Coupon, type EventInfo } from '../api'
 import { getEventId } from '../lib/eventId'
+import ErrorNotice from './ErrorNotice'
 
 // 04 쿠폰 발급 + 05/06 결과 모달. (CLAUDE.md §4)
 export default function CouponIssuance() {
@@ -9,15 +10,22 @@ export default function CouponIssuance() {
   const [coupons, setCoupons] = useState<Coupon[] | null>(null)
   const [claiming, setClaiming] = useState(false)
   const [result, setResult] = useState<ClaimResult | null>(null)
+  const [error, setError] = useState<unknown>(null)
+  const [returnMissing, setReturnMissing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([getEventInfo(eventId), getCoupons(eventId)]).then(([info, list]) => {
-      if (!cancelled) {
-        setEventInfo(info)
-        setCoupons(list)
-      }
-    })
+    Promise.all([getEventInfo(eventId), getCoupons(eventId)]).then(
+      ([info, list]) => {
+        if (!cancelled) {
+          setEventInfo(info)
+          setCoupons(list)
+        }
+      },
+      (e) => {
+        if (!cancelled) setError(e ?? new Error('불러오기 실패'))
+      },
+    )
     return () => {
       cancelled = true
     }
@@ -29,6 +37,8 @@ export default function CouponIssuance() {
     try {
       const res = await claimCoupons(eventId)
       setResult(res.result)
+    } catch (e) {
+      setError(e ?? new Error('쿠폰 발급 실패'))
     } finally {
       setClaiming(false)
     }
@@ -40,8 +50,12 @@ export default function CouponIssuance() {
       window.location.href = returnUrl
       return
     }
-    // TODO(미정): returnUrl이 빈 문자열일 때 모달만 닫는다 (CLAUDE.md §4, §10).
-    setResult(null)
+    // returnUrl이 비어 있으면 이동하지 않고 모달 안에 안내 문구를 보여 준다. (CLAUDE.md §4)
+    setReturnMissing(true)
+  }
+
+  if (error !== null) {
+    return <ErrorNotice error={error} />
   }
 
   if (!eventInfo || !coupons) {
@@ -85,6 +99,9 @@ export default function CouponIssuance() {
                   아쉽지만 준비된 수량이 모두 발급되었어요. 다음 이벤트에서 다시 만나요.
                 </p>
               </>
+            )}
+            {returnMissing && (
+              <p className="modal-submessage">이동할 페이지 주소를 찾을 수 없습니다.</p>
             )}
             <button className="primary-button" onClick={handleConfirm}>
               확인
