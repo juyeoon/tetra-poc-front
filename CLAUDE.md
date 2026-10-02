@@ -116,14 +116,14 @@ API 호출은 전부 `src/api/index.ts` 한 곳에 둔다. **화면 코드에서
 
 **서버 시각**: 서버 시각 API는 없다. 모든 응답의 `Date` 헤더(초 단위, GMT)를 JS에서 읽을 수 있고, 캐시된 응답(커서)은 `Age` 헤더를 더해 보정한다. 이벤트 시작 시각은 이벤트 정보 API로 받게 되므로(아래) 그 API를 붙인 뒤에 보정을 쓸지 정한다(§10).
 
-**이벤트 정보 API(확정, 백엔드 구현 전)**: `GET /api/issuance/events/{eventId}/info`(인증과 쿠키 불필요). 경로는 `/{eventId}`가 아니라 `/{eventId}/info`다(CDN 캐시를 이 경로에만 걸기 위함). 응답 `data`는 `{ eventId, name, startAt, endAt, bannerUrl, returnUrl }`이고 시각은 `+09:00`이 붙은 ISO 문자열이다. `bannerUrl`과 `returnUrl`은 빈 문자열일 수 있고 나머지는 항상 있다. 에러는 404 `EVENT_NOT_FOUND`, 400 `INVALID_REQUEST`다. CDN에서 최대 60초 캐시되므로(`s-maxage=60`) 커서처럼 캐시 무효화 쿼리나 커스텀 헤더를 붙이지 않는다. **백엔드가 구현을 알려 줄 때까지 `getEventInfo`는 더미를 쓴다**(`src/mocks/event.ts`). 붙일 때는 `getEventInfo`만 바꾼다. 지터 상한(`jitterMaxMs`)은 API로 받지 않고 프런트 설정으로 둔다.
+**이벤트 정보 API(확정, 구현 완료, 프런트 연결됨)**: `GET /api/issuance/events/{eventId}/info`(인증과 쿠키 불필요). 경로는 `/{eventId}`가 아니라 `/{eventId}/info`다(CDN 캐시를 이 경로에만 걸기 위함). 응답 `data`는 `{ eventId, name, startAt, endAt, bannerUrl, returnUrl }`이고 시각은 `+09:00`이 붙은 ISO 문자열이다. `bannerUrl`과 `returnUrl`은 빈 문자열일 수 있고 나머지는 항상 있다. 에러는 404 `EVENT_NOT_FOUND`, 400 `INVALID_REQUEST`다. CDN에서 최대 60초 캐시되므로(`s-maxage=60`) 커서처럼 캐시 무효화 쿼리나 커스텀 헤더를 붙이지 않는다. `getEventInfo`가 이 API를 호출한다. 단 개발용으로 **`?startsIn=<초>`가 있으면 더미**(`src/mocks/event.ts`)를 쓴다(로컬 DB 시드의 시작 시각이 이미 지나 실제 응답으로는 카운트다운을 볼 수 없기 때문). 404, 400은 재시도하지 않고 02, 03, 04 모두 `ErrorNotice`로 보낸다. 지터 상한(`jitterMaxMs`)은 API로 받지 않고 프런트 설정으로 둔다.
 
 **순서 검증은 없다(PoC 결정)**: 서버는 내 번호 ≤ 커서를 검증하지 않아서 순서 전에 claim을 호출해도 재고가 있으면 성공한다. "아직 내 순서 아님" 에러 코드는 없다. 순서를 지키는 장치는 프런트가 `gap <= 0`일 때만 `/issue`로 이동하는 것 하나뿐이다. 쿠폰 목록은 세션만 있으면 조회된다. claim 처리 뒤에는 쿠폰 목록이 정상 200이고, 번호표 요청과 claim은 `ALREADY_CLAIMED`로 막힌다.
 
 아래 시그니처는 **화면 코드가 보는 모양**이다. API 응답과 다른 곳은 `src/api/`가 옮겨 담는다: `ticketNumber`→`ticket`, `data.coupons`→배열, `SOLD_OUT`→`FAILED_SOLDOUT`(DB `issuance_history.result` 값). 화면 쪽 이름을 응답에 맞출지는 미정이다.
 
 ```ts
-getEventInfo(eventId: number): Promise<EventInfo>        // 더미 전용, 실제 API 없음
+getEventInfo(eventId: number): Promise<EventInfo>        // GET /info. ?startsIn= 이 있으면 더미
 requestTicket(eventId: number): Promise<{ ticket: number }>   // 호출할 때마다 새 번호
 getQueueCursor(eventId: number): Promise<{ cursor: number }>
 getCoupons(eventId: number): Promise<{ couponId: number; name: string; description: string }[]>
@@ -181,13 +181,14 @@ claimCoupons(eventId: number): Promise<{ result: 'SUCCESS' | 'FAILED_SOLDOUT' }>
 ## 7. 설정, 더미 데이터, 이벤트 식별
 
 - 설정은 `src/config.ts` 한 곳에 모은다. 정해진 값은 **`jitterMaxMs = 1000`** 하나다. 폴링 실패 재시도 간격(2초)과 연속 실패 상한(5회)은 스펙의 예시 값이며 `// 임시: 미정` 주석을 단다.
-- 더미 이벤트 정보는 `src/mocks/event.ts`에 두고, 화면은 `getEventInfo`만 통해 읽는다. 필드는 PoC DB 정의서의 `event` 테이블 컬럼에서 온 것이다.
+- 이벤트 정보는 화면이 `getEventInfo`만 통해 읽는다. 개발용 더미(`?startsIn=` 때)는 `src/mocks/event.ts`에 둔다. 필드는 PoC DB 정의서의 `event` 테이블 컬럼에서 온 것이다.
 
 ```ts
 type EventInfo = {
   eventId: number           // event.event_id (INT UNSIGNED, 시드는 1)
   name: string              // event.name
   startAt: string           // event.start_at. KST (아래 시간대 규칙)
+  endAt: string             // event.end_at. KST
   bannerUrl: string         // event.banner_image_path. DB 시드 값은 빈 문자열
   returnUrl: string         // event.endpoint_url (테넌트 복귀 주소). DB 시드 값은 빈 문자열
 }
@@ -196,7 +197,7 @@ type EventInfo = {
 쿠폰 목록은 `EventInfo`에 넣지 않는다. `getCoupons`로 받는다.
 
 - **시간대**: DB의 `start_at`은 KST로 저장되고 시간대 정보가 없다. 프런트는 이 값을 항상 **KST(+09:00)로 해석**한다. 브라우저의 로컬 시간대로 파싱하지 않는다. 더미 값도 `+09:00`이 붙은 ISO 문자열로 둔다.
-- DB 시드의 `start_at`(2026-09-29 10:00 KST)은 이미 지난 값이라 더미에 쓰지 않는다. `startAt`은 기본적으로 실행 시점의 15초 뒤(`+09:00` 표기)로 계산하고, `?startsIn=<초>`로 바꿀 수 있게 한다.
+- DB 시드의 `start_at`(2026-09-29 10:00 KST)은 이미 지난 값이라 더미에 쓰지 않는다. 더미의 `startAt`은 실행 시점의 15초 뒤(`+09:00` 표기)이고 `?startsIn=<초>`로 바꿀 수 있다. 더미는 이 쿼리가 있을 때만 쓴다.
 - 이벤트 id는 `src/lib/eventId.ts`에서 얻는다. 호스트의 첫 라벨은 해시값이라 event id로 쓰지 않는다(백엔드 확인). 세션 발급이 끝나면 서버가 `/?event=<id>`로 보내므로, 숫자 event id는 **`?event=<id>` 쿼리로만** 전달된다. 우선순위는 (1) `?event=<id>` 쿼리, (2) 설정의 기본값 1(DB 시드의 event_id, `// 임시`)이다. 화면을 이동할 때 쿼리를 그대로 넘겨야 id가 유지된다.
 - 배너는 `public/`의 더미 이미지를 쓴다. 실제 DB 값은 빈 문자열일 수 있으므로 화면은 `bannerUrl`이 비어 있어도 깨지지 않아야 한다.
 
@@ -220,21 +221,20 @@ type EventInfo = {
 ## 10. 아직 정해지지 않은 것 (구현하지 말고 TODO로만)
 
 - 에러 화면의 디자인(문구는 `src/lib/errorNotice.ts`에서 `error.code`별로 정했고 임시다). 이벤트 종료 코드가 생기면 문구를 추가한다
-- 이벤트 정보 API(`/info`)가 구현되면 `getEventInfo`를 실제 호출로 교체(백엔드가 알려 주기로 함). 그 뒤 서버 시각 보정(`Date`/`Age` 헤더 사용 여부)을 정한다
-- 이벤트 종료(`EVENT_ENDED`)와 `endAt`을 화면에서 어떻게 쓸지(지금은 에러 문구만)
+- 서버 시각 보정(`Date`/`Age` 헤더 사용 여부). `/info`가 연결됐으므로 이제 정할 수 있다
+- `endAt`을 02에서 쓸지(종료됐으면 버튼 대신 "종료된 이벤트입니다"를 바로 보여 줄지). 지금은 쓰지 않아 종료 후에도 02 버튼이 활성화되고, 03에서 `EVENT_ENDED` 에러 문구가 나온다(백엔드는 프런트에 맡김)
 - 폴링 재시도 간격을 늘리는 방식(백엔드 권장)
-- `returnUrl`과 배너 주소가 어디서 오는지(지금은 더미). 비어 있을 때의 동작은 확정(배너는 그리지 않고, `returnUrl`이 비면 모달에 안내 문구)
+- `returnUrl`과 배너 주소는 `/info`로 오고 비어 있을 수 있다. 비어 있을 때의 동작은 확정(배너는 그리지 않고, `returnUrl`이 비면 모달에 안내 문구)
 - 폴링 실패 시 재시도 정책의 확정 (고정 간격인지 지수 백오프와 지터인지), 에러 화면
 - 카운트다운의 서버 시각 보정 방식
 - 에러와 예외 화면 (시작 전 접근, 세션 없음·만료, 요청 제한, 네트워크 오류, 이벤트 종료)
-- 테넌트 복귀 주소와 지터 값이 어디서 오는지 (PoC는 더미와 설정에서)
 - 04를 직접 열었을 때의 처리. 서버는 순서를 검증하지 않는다(PoC 결정)
 - 모바일 대응 (화면설계서는 PC 기준)
 
 ## 11. 완료 조건
 
 1. `npm run build`가 성공하고 `dist/`에 해시 JS와 CSS, `index.html`이 있다.
-2. `npm run dev`에서 더미 데이터로 02 → (지터) → 03 → 04 → 모달 → `returnUrl` 이동이 끝까지 이어진다.
+2. `npm run dev`에서 `?startsIn=<초>`(더미 이벤트 정보)로 02 → (지터) → 03 → 04 → 모달 → `returnUrl` 이동이 끝까지 이어진다.
 3. `/queue`, `/issue`에서 새로고침해도 같은 화면이 열린다.
 4. API 호출 함수가 `src/api/` 한 모듈에만 있고 화면 코드에 `fetch`나 `axios`가 없다.
 5. 스토리지와 `document.cookie` 사용이 없다.

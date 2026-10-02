@@ -5,6 +5,7 @@ export type EventInfo = {
   eventId: number // event.event_id (INT UNSIGNED, 시드는 1)
   name: string // event.name
   startAt: string // event.start_at. 항상 KST(+09:00)로 해석/표기
+  endAt: string // event.end_at. 항상 KST(+09:00)로 해석/표기
   bannerUrl: string // event.banner_image_path. DB 시드 값은 빈 문자열
   returnUrl: string // event.endpoint_url (테넌트 복귀 주소). DB 시드 값은 빈 문자열
 }
@@ -29,8 +30,8 @@ function getStartsInSeconds(): number {
 }
 
 // returnUrl이 빈 문자열일 때의 동작은 CLAUDE.md §4에 정의되어 있다(모달 안에 안내 문구).
-// TODO(미정): 백엔드가 GET /api/issuance/events/{eventId}/info를 구현하면 getEventInfo를 실제 호출로 바꾸고
-// 이 더미는 걷어낸다(CLAUDE.md §5). 응답에는 endAt도 있다.
+// getEventInfo는 이제 실제 /info를 호출한다. 이 더미는 `?startsIn=<초>`가 있을 때만 쓰는 개발용이다
+// (카운트다운 확인용, 실제 이벤트는 시작 시각이 이미 지났을 수 있음). (CLAUDE.md §5)
 // DB 시드 값은 빈 문자열이라 기본값도 빈 문자열로 둔다. 04→모달→복귀 흐름 전체를 눈으로 확인하려면
 // 개발 중 `?returnUrl=<url>` 쿼리로 값을 채워 테스트한다.
 function getReturnUrl(): string {
@@ -47,11 +48,14 @@ function getBannerUrl(): string {
 }
 
 export function buildDummyEventInfo(eventId: number): EventInfo {
-  const startAt = toKstIsoString(now() + getStartsInSeconds() * 1000)
+  const startMs = now() + getStartsInSeconds() * 1000
+  const startAt = toKstIsoString(startMs)
+  const endAt = toKstIsoString(startMs + 30 * 24 * 60 * 60 * 1000)
   return {
     eventId,
     name: 'PoC 이벤트',
     startAt,
+    endAt,
     bannerUrl: getBannerUrl(),
     returnUrl: getReturnUrl(),
   }

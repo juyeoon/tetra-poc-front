@@ -1,8 +1,9 @@
 // API 호출은 전부 이 모듈에만 둔다. 화면 코드는 fetch/axios를 직접 쓰지 않는다. (CLAUDE.md §5)
-// 2단계: getEventInfo를 뺀 나머지는 실제 호출로 바뀌었다. 화면 코드는 바꾸지 않았다.
+// 2단계: 모든 호출이 실제 API로 바뀌었다(getEventInfo는 개발용 ?startsIn= 때만 더미). 화면 코드는 바꾸지 않았다.
 import { now } from '../lib/serverTime'
 import { buildDummyEventInfo, type EventInfo } from '../mocks/event'
 import { parseCursorResponse } from './parseCursorResponse'
+import { parseEventInfo } from './parseEventInfo'
 import { ApiError, unwrapApiEnvelope } from './unwrapApiEnvelope'
 
 export type { EventInfo }
@@ -15,10 +16,6 @@ export type Coupon = {
 
 export type ClaimResult = 'SUCCESS' | 'FAILED_SOLDOUT'
 
-// 이벤트 정보(이벤트명/시작시각/배너/복귀주소)는 API가 없다. PoC 전용 더미로 계속 유지한다. (CLAUDE.md §5)
-export async function getEventInfo(eventId: number): Promise<EventInfo> {
-  return buildDummyEventInfo(eventId)
-}
 
 // 같은 호스트의 상대 경로만 쓴다. 절대 URL/호스트 하드코딩 금지. (CLAUDE.md §5 2단계 규칙)
 // 세션은 서버가 내려주는 HttpOnly 쿠키이므로 JS는 세션 id를 읽지도, 헤더에 싣지도 않는다. same-origin이면
@@ -130,6 +127,19 @@ export async function getQueueCursor(eventId: number): Promise<{ cursor: number 
 
   const res = await fetch(`/api/issuance/events/${eventId}/queue/cursor`)
   return parseCursorResponse(await readEnvelope(res, 'GET queue/cursor'))
+}
+
+// 이벤트 정보. GET /api/issuance/events/{eventId}/info (인증과 쿠키 불필요).
+// CDN에서 최대 60초 캐시되므로(s-maxage=60) 커서처럼 캐시 무효화 쿼리, fetch의 cache 옵션,
+// 커스텀 헤더, credentials 옵션 변경을 하지 않는다 — 같은 호스트 상대 경로에 대한 기본 fetch 그대로 둔다.
+// 개발용: `?startsIn=<초>`가 있으면 더미를 돌려준다. 로컬 DB 시드의 시작 시각은 이미 지나서,
+// 실제 응답으로는 02에서 카운트다운을 볼 수 없기 때문이다.
+export async function getEventInfo(eventId: number): Promise<EventInfo> {
+  if (new URLSearchParams(window.location.search).has('startsIn')) {
+    return buildDummyEventInfo(eventId)
+  }
+  const res = await fetch(`/api/issuance/events/${eventId}/info`)
+  return parseEventInfo(await readEnvelope(res, 'GET info'))
 }
 
 // 쿠폰 목록 응답 data는 { coupons: [...] }. 배열을 꺼내 돌려준다.

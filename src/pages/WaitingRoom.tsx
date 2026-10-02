@@ -4,6 +4,7 @@ import { getEventInfo, type EventInfo } from '../api'
 import { config } from '../config'
 import { getEventId } from '../lib/eventId'
 import { now } from '../lib/serverTime'
+import ErrorNotice from './ErrorNotice'
 
 function formatCountdown(remainingMs: number): string {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
@@ -20,13 +21,19 @@ export default function WaitingRoom() {
   const [eventInfo, setEventInfo] = useState<EventInfo | null>(null)
   const [remainingMs, setRemainingMs] = useState<number | null>(null)
   const [joining, setJoining] = useState(false)
+  const [error, setError] = useState<unknown>(null)
 
   useEffect(() => {
     const eventId = getEventId()
     let cancelled = false
-    getEventInfo(eventId).then((info) => {
-      if (!cancelled) setEventInfo(info)
-    })
+    getEventInfo(eventId).then(
+      (info) => {
+        if (!cancelled) setEventInfo(info)
+      },
+      (e) => {
+        if (!cancelled) setError(e ?? new Error('이벤트 정보 요청 실패'))
+      },
+    )
     return () => {
       cancelled = true
     }
@@ -41,6 +48,10 @@ export default function WaitingRoom() {
     const intervalId = setInterval(tick, 250)
     return () => clearInterval(intervalId)
   }, [eventInfo])
+
+  if (error !== null) {
+    return <ErrorNotice error={error} />
+  }
 
   if (!eventInfo || remainingMs === null) {
     return <div className="page page-center">불러오는 중...</div>
