@@ -22,6 +22,7 @@ export default function WaitingRoom() {
   const [remainingMs, setRemainingMs] = useState<number | null>(null)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const eventId = getEventId()
@@ -37,7 +38,7 @@ export default function WaitingRoom() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [attempt])
 
   useEffect(() => {
     if (!eventInfo) return
@@ -50,7 +51,16 @@ export default function WaitingRoom() {
   }, [eventInfo])
 
   if (error !== null) {
-    return <ErrorNotice error={error} />
+    // 다시 시도: 같은 요청(이벤트 정보)을 한 번 다시 보낸다.
+    return (
+      <ErrorNotice
+        error={error}
+        onRetry={() => {
+          setError(null)
+          setAttempt((a) => a + 1)
+        }}
+      />
+    )
   }
 
   if (!eventInfo || remainingMs === null) {

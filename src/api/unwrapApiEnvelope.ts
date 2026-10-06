@@ -2,17 +2,25 @@
 //   성공: { success: true, data: {...} }
 //   에러: { success: false, error: { code, message } } (HTTP 상태 코드는 4xx/5xx)
 // 봉투가 아닌 응답은 설정 오류 같은 비정상 응답이므로 통과시키지 않고 예외로 처리한다.
-// TODO(미정): error.code(SESSION_NOT_FOUND, EVENT_NOT_STARTED, ALREADY_CLAIMED, TICKET_REQUIRED 등)별 화면 동작
+// error.code별 화면은 lib/errors.ts에서 고른다.
 
 export class ApiError extends Error {
   readonly code: string | null
   readonly status: number | null
+  // 응답의 Retry-After 헤더(ms). 없으면 null.
+  readonly retryAfterMs: number | null
 
-  constructor(message: string, code: string | null = null, status: number | null = null) {
+  constructor(
+    message: string,
+    code: string | null = null,
+    status: number | null = null,
+    retryAfterMs: number | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.status = status
+    this.retryAfterMs = retryAfterMs
   }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { claimCoupons, getCoupons, getEventInfo, type ClaimResult, type Coupon, type EventInfo } from '../api'
+import { classifyError } from '../lib/errors'
 import { getEventId } from '../lib/eventId'
 import ErrorNotice from './ErrorNotice'
 
@@ -12,6 +13,9 @@ export default function CouponIssuance() {
   const [result, setResult] = useState<ClaimResult | null>(null)
   const [error, setError] = useState<unknown>(null)
   const [returnMissing, setReturnMissing] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  // claim 응답을 못 받은 상태(네트워크 예외, 502, 504). 서버에서는 발급이 끝났을 수 있어 실패로 보지 않는다.
+  const [claimPending, setClaimPending] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -29,16 +33,25 @@ export default function CouponIssuance() {
     return () => {
       cancelled = true
     }
-  }, [eventId])
+  }, [eventId, attempt])
 
   async function handleClaim() {
     if (claiming) return
     setClaiming(true)
     try {
       const res = await claimCoupons(eventId)
+      setClaimPending(false)
       setResult(res.result)
     } catch (e) {
-      setError(e ?? new Error('쿠폰 발급 실패'))
+      if (classifyError(e) === 'network') {
+        // 응답을 못 받았다. 에러 화면이 아니라 "발급 여부 확인 중"으로 둔다. (추가지침 02 작업 2)
+        // 결과 조회 API가 없다(백엔드 확인). "다시 확인"으로 claim을 다시 보내 확정한다. (확정)
+        // 이미 처리됐으면 ALREADY_CLAIMED가 와서 성공/품절은 알 수 없다.
+        setClaimPending(true)
+      } else {
+        setClaimPending(false)
+        setError(e ?? new Error('쿠폰 발급 실패'))
+      }
     } finally {
       setClaiming(false)
     }
@@ -55,7 +68,16 @@ export default function CouponIssuance() {
   }
 
   if (error !== null) {
-    return <ErrorNotice error={error} />
+    // 다시 시도: 같은 요청(쿠폰 목록 등)을 한 번 다시 보낸다.
+    return (
+      <ErrorNotice
+        error={error}
+        onRetry={() => {
+          setError(null)
+          setAttempt((a) => a + 1)
+        }}
+      />
+    )
   }
 
   if (!eventInfo || !coupons) {
@@ -84,6 +106,18 @@ export default function CouponIssuance() {
           </li>
         ))}
       </ul>
+
+      {claimPending && (
+        <div className="modal-overlay">
+          <div className="modal">
+            {/* 문구는 화면설계서에 없어 팀이 정했다. */}
+            <p className="modal-message">발급 여부를 확인하고 있어요</p>
+            <button className="primary-button" disabled={claiming} onClick={handleClaim}>
+              다시 확인
+            </button>
+          </div>
+        </div>
+      )}
 
       {result !== null && (
         <div className="modal-overlay">

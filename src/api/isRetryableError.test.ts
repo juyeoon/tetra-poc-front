@@ -20,7 +20,7 @@ describe('isRetryableError', () => {
     expect(isRetryableError(new ApiError('x'))).toBe(true)
   })
 
-  it('2xx인데 봉투가 아닌 응답은 재시도하지 않는다', () => {
-    expect(isRetryableError(new ApiError('x', null, 200))).toBe(false)
+  it('2xx인데 JSON이 아니거나 형식이 맞지 않는 응답은 실패로 보고 재시도한다', () => {
+    expect(isRetryableError(new ApiError('x', null, 200))).toBe(true)
   })
 })

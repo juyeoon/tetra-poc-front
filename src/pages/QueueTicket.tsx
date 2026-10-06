@@ -11,6 +11,7 @@ export default function QueueTicket() {
   const eventId = getEventId()
   const [myTicketNumber, setMyTicketNumber] = useState<number | null>(null)
   const [ticketError, setTicketError] = useState<unknown>(null)
+  const [ticketAttempt, setTicketAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -25,9 +26,9 @@ export default function QueueTicket() {
     return () => {
       cancelled = true
     }
-  }, [eventId])
+  }, [eventId, ticketAttempt])
 
-  const { gap, failed, error: pollingError } = useQueuePolling(eventId, myTicketNumber)
+  const { gap, delayed, failed, error: pollingError, restart } = useQueuePolling(eventId, myTicketNumber)
 
   useEffect(() => {
     if (gap !== null && gap <= 0) {
@@ -36,9 +37,20 @@ export default function QueueTicket() {
     }
   }, [gap, navigate])
 
-  // 번호표 요청 실패, 폴링 포기 시 에러 UI (화면설계서에 없어 최소 문구)
-  if (ticketError !== null || failed) {
-    return <ErrorNotice error={ticketError ?? pollingError} />
+  // 번호표 요청 실패, 폴링 실패가 15초 이상 이어진 경우의 에러 UI (추가지침 02). 다시 시도는 같은 요청을 한 번 다시 보낸다.
+  if (ticketError !== null) {
+    return (
+      <ErrorNotice
+        error={ticketError}
+        onRetry={() => {
+          setTicketError(null)
+          setTicketAttempt((a) => a + 1)
+        }}
+      />
+    )
+  }
+  if (failed) {
+    return <ErrorNotice error={pollingError} onRetry={restart} />
   }
 
   const waitingCount = gap !== null ? Math.max(0, gap) : null
@@ -57,6 +69,8 @@ export default function QueueTicket() {
         <div className="waiting-count">
           {waitingCount === null ? '-' : waitingCount.toLocaleString('ko-KR')}명
         </div>
+        {/* 폴링 실패가 15초 전이면 대기열 화면을 유지하고 지연 표시만 띄운다. 마지막 순번은 그대로 둔다. */}
+        {delayed && <div className="caption">연결이 지연되고 있어요</div>}
       </div>
     </div>
   )

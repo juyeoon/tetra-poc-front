@@ -4,6 +4,7 @@ import { now } from '../lib/serverTime'
 import { buildDummyEventInfo, type EventInfo } from '../mocks/event'
 import { parseCursorResponse } from './parseCursorResponse'
 import { parseEventInfo } from './parseEventInfo'
+import { parseRetryAfter } from './retryAfter'
 import { ApiError, unwrapApiEnvelope } from './unwrapApiEnvelope'
 
 export type { EventInfo }
@@ -23,22 +24,39 @@ export type ClaimResult = 'SUCCESS' | 'FAILED_SOLDOUT'
 // fetch는 HTTP 오류(res.ok가 false)에서 예외를 던지지 않으므로 직접 확인해 실패로 처리한다. (CLAUDE.md §5)
 // 5개 API 모두 { success, data } / { success:false, error:{code,message} } 봉투다. 에러 응답(4xx/5xx)도
 // 본문이 봉투이므로 읽어서 error.code를 ApiError에 싣는다. 본문을 읽을 수 없으면 상태 코드만 싣는다.
+// 추가지침 02: JSON 파싱 전에 content-type을 확인한다. 502/504 본문은 CloudFront가 만든 HTML이므로
+// 읽지 않고 상태 코드로만 판단한다. 200이어도 JSON이 아니면 실패다. 429/502/503/504는 인프라가 만든
+// 응답이라 본문의 code를 쓰지 않는다.
+const INFRA_STATUSES = [429, 502, 503, 504]
+
+function isJsonResponse(res: Response): boolean {
+  return /application\/json/i.test(res.headers.get('content-type') ?? '')
+}
+
 async function readEnvelope(res: Response, label: string): Promise<unknown> {
+  const status = res.status
+  const retryAfterMs = res.ok ? null : parseRetryAfter(res.headers.get('retry-after'), now())
+  const failure = (code: string | null, message: string = `요청 실패: ${label} -> ${status}`) =>
+    new ApiError(message, code, status, retryAfterMs)
+
+  if (!isJsonResponse(res)) throw failure(null)
   let body: unknown
   try {
     body = await res.json()
   } catch {
-    throw new ApiError(`요청 실패: ${label} -> ${res.status}`, null, res.status)
+    throw failure(null)
   }
   if (!res.ok) {
-    try {
-      unwrapApiEnvelope(body, res.status)
-    } catch (e) {
-      if (e instanceof ApiError && e.code !== null) throw e
+    if (!INFRA_STATUSES.includes(status)) {
+      try {
+        unwrapApiEnvelope(body, status)
+      } catch (e) {
+        if (e instanceof ApiError && e.code !== null) throw failure(e.code, e.message)
+      }
     }
-    throw new ApiError(`요청 실패: ${label} -> ${res.status}`, null, res.status)
+    throw failure(null)
   }
-  return unwrapApiEnvelope(body, res.status)
+  return unwrapApiEnvelope(body, status)
 }
 
 async function request(path: string, init?: RequestInit): Promise<unknown> {
@@ -54,7 +72,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 // 번호표 응답 data는 { ticketNumber: number }. 화면 코드가 쓰는 { ticket }으로 옮겨 담는다.
-// TODO(미정): 화면 코드의 이름을 ticketNumber로 맞출지
+// 화면 코드의 이름은 ticket 그대로 두고 여기서만 옮겨 담는다. (확정)
 export async function requestTicket(eventId: number): Promise<{ ticket: number }> {
   const data = await request(`/api/issuance/events/${eventId}/ticket`, { method: 'POST' })
   if (!isRecord(data) || typeof data.ticketNumber !== 'number' || !Number.isFinite(data.ticketNumber)) {
@@ -67,9 +85,7 @@ export async function requestTicket(eventId: number): Promise<{ ticket: number }
 // ?cursorRegress=<n> 또는 ?cursorFail=<n>|always가 있을 때만 켜진다. 평소(둘 다 없음)에는
 // 바로 아래의 실제 fetch 경로를 탄다. ?cursorPerSec=<n>은 이 목 모드 전용으로, 시간에 비례해
 // 올라가는 가짜 커서를 만드는 데만 쓴다(기본 초당 20).
-// TODO(미정): CLAUDE.md §5의 1단계용 ?ticket=은 2단계에서 실제 번호표 API로 교체하며 뺐다.
-// 이 문서가 ?ticket=/?cursorPerSec=가 함께 있다고 전제한 부분과 어긋나, ?cursorPerSec=만
-// 커서 테스트 전용으로 되살렸다.
+// 1단계의 ?ticket=, ?result=는 실제 API로 바꾸며 없앴다. 커서만 위 쿼리로 목 모드를 쓸 수 있다.
 function isCursorMockActive(): boolean {
   const params = new URLSearchParams(window.location.search)
   return params.has('cursorRegress') || params.has('cursorFail')
@@ -155,7 +171,7 @@ export async function getCoupons(eventId: number): Promise<Coupon[]> {
 // claim 응답 data는 { result: 'SUCCESS' | 'SOLD_OUT', coupons: [...] }. 품절 값은 서버가 SOLD_OUT으로 준다.
 // 화면 코드는 DB issuance_history.result 값인 FAILED_SOLDOUT을 쓰므로 여기서 옮겨 담는다.
 // 응답의 coupons는 쓰지 않는다. 서버 측 재검증 로직은 별도 담당.
-// TODO(미정): 화면 코드의 값 이름을 SOLD_OUT으로 맞출지
+// 화면 코드의 값 이름은 FAILED_SOLDOUT 그대로 두고 여기서만 옮겨 담는다. (확정)
 export async function claimCoupons(eventId: number): Promise<{ result: ClaimResult }> {
   const data = await request(`/api/issuance/events/${eventId}/coupons/claim`, { method: 'POST' })
   if (!isRecord(data)) throw new ApiError('쿠폰 발급 응답 형식 오류')
