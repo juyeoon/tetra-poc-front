@@ -23,6 +23,8 @@ export default defineConfig({
   build: {
     // 이미지 등 자산 폴더 이름이 겹치지 않도록 분리 (CLAUDE.md §9).
     assetsDir: 'app-assets',
+    // 소스맵(.map)을 만들지 않는다. 올리면 원본 코드가 공개된다. (배포 요건 8-2)
+    sourcemap: false,
   },
   test: {
     environment: 'node',

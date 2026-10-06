@@ -240,7 +240,8 @@ type EventInfo = {
 - `npm run build`가 `dist/`를 만든다. JS와 CSS는 해시가 붙은 파일명이고, `index.html`만 해시가 없다.
 - 이미지 자산의 경로 이름은 미정이라, 빌드 산출물의 폴더 이름이 겹치지 않게 Vite의 `build.assetsDir`를 `app-assets`로 설정한다.
 - 진입점은 `index.html` 하나다. 새로고침 때의 403/404 복구는 CloudFront가 맡는다.
-- `dist/`는 테넌트 콘텐츠 버킷으로 복사되어 `{event id}.{tenant id}.루트도메인/`의 루트에서 서빙된다.
+- `favicon.ico` 파일은 두지 않고 `index.html`에 `<link rel="icon" href="data:," />`를 둔다. 브라우저가 `/favicon.ico`를 요청하면 마지막 경로에 점이 있어 CloudFront Function이 `index.html`로 바꾸지 않고 S3로 가서 403이 나고, 이 403이 10초 캐시되어 부하 시험의 4xx 지표에 섞이기 때문이다.
+- `dist/`는 테넌트 콘텐츠 버킷으로 복사되어 `{event id}.{tenant id}.루트도메인/`의 루트에서 서빙된다. 업로드는 `scripts/deploy.sh`(`npm run deploy`)가 한다. 사용법과 업로드 전 검사는 README의 "배포"를 본다. 실제 업로드는 사람이 `DRY_RUN=1` 결과를 보고 직접 실행한다.
 
 ## 10. PoC에서 정한 것과 하지 않기로 한 것
 

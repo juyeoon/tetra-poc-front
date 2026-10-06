@@ -15,7 +15,8 @@
 npm install
 npm run dev      # 로컬 개발 서버
 npm run build    # dist/ 정적 파일 생성
-npm test         # computeDelay, mergeCursor, parseCursorResponse, eventId 파싱 단위 테스트
+npm test         # 폴링(간격, 실패 15초 규칙), 응답 처리, 에러 화면 매핑 등 단위 테스트
+npm run deploy   # dist/를 S3에 업로드 (아래 "배포" 참고)
 ```
 
 ## 화면과 라우팅
@@ -45,8 +46,7 @@ CloudFront behavior 설정, EKS Ingress 등 인프라 쪽 구성은 이 레포 �
 
 API 호출은 전부 `src/api/index.ts` 한 곳에 있다. 화면 코드는 `fetch`를 직접 쓰지 않는다.
 
-- `getEventInfo`: API가 없어 계속 더미다 (이벤트명/배너/복귀주소는 PoC 전용 값).
-- 나머지 4개(`requestTicket`, `getQueueCursor`, `getCoupons`, `claimCoupons`)는 실제 `fetch`로 `/api/issuance/events/{eventId}/...`를 호출한다.
+- 5개(`getEventInfo`, `requestTicket`, `getQueueCursor`, `getCoupons`, `claimCoupons`) 모두 실제 `fetch`로 `/api/issuance/events/{eventId}/...`를 호출한다. 단 개발용으로 `?startsIn=<초>`가 있으면 `getEventInfo`는 더미를 돌려준다(카운트다운 확인용).
 
 로컬 개발 중 실제 백엔드에 붙여보려면 `.env.local`에 아래를 추가한다.
 
@@ -64,11 +64,45 @@ VITE_API_PROXY_TARGET=<EKS/ALB 주소>
 - `mergeCursor`(`src/hooks/useQueuePolling.ts`): 지금까지 받은 커서의 최댓값만 쓰고, 작은 값(캐시 지연으로 인한 역행)은 무시한다.
 - 로컬에서 실제 백엔드 없이 이 동작을 테스트하려면 `/queue`에 아래 쿼리를 쓴다.
   - `?cursorRegress=<n>` — n번째 호출마다 직전보다 작은 커서를 돌려준다(역행 흉내)
-  - `?cursorFail=<n>` 또는 `?cursorFail=always` — n번째 호출마다, 또는 매번 잘못된 응답을 돌려준다(5회 연속이면 에러 UI 노출)
+  - `?cursorFail=<n>` 또는 `?cursorFail=always` — n번째 호출마다, 또는 매번 잘못된 응답을 돌려준다(실패가 15초 이어지면 에러 UI 노출)
   - `?cursorPerSec=<n>` — 위 두 옵션이 쓸 가짜 커서의 초당 증가량(기본 20)
+
+## 배포 (S3 업로드)
+
+`scripts/deploy.sh`가 빌드 산출물(`dist/`)을 CloudFront(multi-tenant)가 읽는 S3 버킷에 올린다. **빌드는 하지 않으므로 먼저 `npm run build`를 한다.** AWS CLI v2가 필요하다.
+
+```
+npm run build
+
+# 1) 먼저 DRY_RUN으로 검사와 올릴 명령을 확인한다 (aws를 실행하지 않는다)
+BUCKET=tetra-storage-poc-poctenant001 EVENT_ID=1 AWS_PROFILE=tetraJyp DRY_RUN=1 npm run deploy
+
+# 2) 결과를 보고 이상이 없으면 DRY_RUN 없이 직접 실행한다
+BUCKET=tetra-storage-poc-poctenant001 EVENT_ID=1 AWS_PROFILE=tetraJyp npm run deploy
+```
+
+| 환경 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `BUCKET` | 예 | 없음 | 업로드 버킷 |
+| `EVENT_ID` | 예 | 없음 | 숫자만 허용. 업로드 경로는 `events/live/<EVENT_ID>/` |
+| `AWS_PROFILE` | 아니오 | AWS CLI 기본 | |
+| `DIST_DIR` | 아니오 | `dist` | |
+| `ASSETS_DIR` | 아니오 | `vite.config.ts`의 `build.assetsDir`(`app-assets`) | 해시 파일 폴더 이름 |
+| `DRY_RUN` | 아니오 | `0` | `1`이면 aws 명령을 실행하지 않고 출력만 |
+
+- **업로드 전 검사**: 아래 중 하나라도 어긋나면 아무것도 올리지 않고 이유를 출력한 뒤 종료코드 2로 끝난다.
+  `index.html`이 루트에 하나만 있다 / `.map` 없음 / `event.json` 없음 / 파일은 `app-assets/` 아래이거나 루트에만 있다 /
+  `app-assets/` 아래 파일 이름에 해시가 있다 / 파일 이름이 `[A-Za-z0-9._-]`만 쓴다 /
+  `index.html`이 `/app-assets/...` 절대 경로로 가리킨다 / 모든 확장자가 Content-Type 표에 있다.
+- **업로드 순서와 Cache-Control**: `app-assets/`의 해시 파일(`public, max-age=31536000, immutable`) → 루트의 `index.html` 이외 파일 → 마지막에 `index.html`(둘 다 `public, max-age=0, s-maxage=60`). 모든 객체에 `--metadata build=<git 짧은 해시>`를 붙인다(커밋하지 않은 변경이 있으면 `-dirty`, git이 없으면 `unknown`).
+- **하지 않는 것**: 삭제, ACL 지정, CloudFront 무효화, 다른 `EVENT_ID` 경로나 버킷 루트에 쓰기. 이전 해시 파일은 지우지 않는다(엣지에 최대 60초 남은 옛 `index.html`이 옛 해시 파일을 가리킬 수 있기 때문이다).
+- **Windows**: `npm run deploy`는 PATH에서 처음 잡히는 `bash`를 쓴다. PowerShell이나 cmd에서는 `C:\Windows\System32\bash.exe`(WSL)가 먼저 잡혀 WSL 배포판이 없으면 `execvpe(/bin/bash) failed`로 실패할 수 있다. 이 경우 **Git Bash에서 실행**한다.
+- 새 확장자(폰트 `.woff2` 등)가 생기면 스크립트의 Content-Type 표에 넣지 말고 팀에 먼저 확인한다.
 
 ## 현재 상태
 
 - 1단계(스켈레톤): 완료. 화면/라우팅/빌드 설정, 폴링 훅.
-- 2단계(실제 API 연결): 완료. `getEventInfo`만 API가 없어 더미로 남아 있고, 나머지 4개는 실제 `fetch`. 응답 스키마가 아직 미정인 엔드포인트는 `src/api/index.ts`에 `TODO(미정)`으로 표시해 뒀다.
+- 2단계(실제 API 연결): 완료. 5개 API 모두 실제 `fetch`.
 - 추가지침 01(서빙 커서 캐시 대응): 완료.
+- 추가지침 02(CloudFront 실습 결과 반영: 폴링 15초 실패 규칙, 상태 코드별 에러 화면): 완료.
+- S3 업로드 스크립트: 완료. 실제 업로드는 사람이 `DRY_RUN` 결과를 보고 직접 실행한다.
